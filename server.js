@@ -4,41 +4,38 @@ const cors = require('cors');
 const app = express();
 const PORT = 3001;
 
-// Middlewares
 app.use(cors());
 app.use(express.json());
 
-// "Banco de dados" temporário (array em memória)
 let stockList = [];
 let currentId = 1;
 
-// ROTAS
-
-// GET - Listar todos os itens
 app.get('/items', (req, res) => {
   res.json(stockList);
 });
 
-// POST - Criar novo item
 app.post('/items', (req, res) => {
-  const { name, description } = req.body;
-  const newItem = {
-    id: currentId++,
-    name,
-    description
-  };
+  const { name, description, quantity = 0 } = req.body;
+  const newItem = { id: currentId++, name, description, quantity };
   stockList.push(newItem);
   res.status(201).json(newItem);
 });
 
-// DELETE - Remover item
+// Atualiza a quantidade de um item (usado para entrada e venda)
+app.patch('/items/:id', (req, res) => {
+  const id = parseInt(req.params.id);
+  const item = stockList.find((i) => i.id === id);
+  if (!item) return res.status(404).json({ error: 'Item não encontrado' });
+  item.quantity = Math.max(0, req.body.quantity);
+  res.json(item);
+});
+
 app.delete('/items/:id', (req, res) => {
-  const { id } = req.params;
-  stockList = stockList.filter(item => item.id !== parseInt(id));
+  const id = parseInt(req.params.id);
+  stockList = stockList.filter((i) => i.id !== id);
   res.status(204).send();
 });
 
-// Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+  console.log(`Servidor rodando em http://localhost:${PORT}`);
 });

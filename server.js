@@ -271,6 +271,7 @@ initDb()
     app.listen(PORT, () => console.log(`Servidor rodando em http://localhost:${PORT}`));
   })
   .catch((err) => {
-    console.error('Erro ao conectar no banco:', err.message);
+    console.error('DATABASE_URL definida:', !!process.env.DATABASE_URL);
+    console.error('Erro ao conectar no banco:', err.stack || err.message || err);
     process.exit(1);
   });

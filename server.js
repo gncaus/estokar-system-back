@@ -8,9 +8,13 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+const DATABASE_URL = process.env.DATABASE_URL;
+// Local Postgres usually has SSL disabled; hosted ones (Railway) require it
+const isLocalDb = !DATABASE_URL || /@(localhost|127\.0\.0\.1|\[::1\])(:|\/)/.test(DATABASE_URL);
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+  connectionString: DATABASE_URL,
+  ssl: isLocalDb ? false : { rejectUnauthorized: false },
 });
 
 // ─── DB init ──────────────────────────────────────────────────────────────────

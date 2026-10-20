@@ -26,4 +26,4 @@ Single-file Express 5 REST API ([server.js](server.js)) on port `PORT` (default 
 - Node.js / CommonJS (`require`)
 - Express 5, cors, pg
 - No TypeScript, no ORM, no tests
-- Deploy: Railway (Postgres plugin injects `DATABASE_URL`; SSL is enabled whenever it is set)
+- Deploy: Railway (Postgres plugin injects `DATABASE_URL`; SSL is enabled for remote hosts, disabled for localhost)

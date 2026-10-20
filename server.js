@@ -88,6 +88,40 @@ function mapSale(row) {
   };
 }
 
+// ─── Validation ───────────────────────────────────────────────────────────────
+
+const PAYMENT_METHODS = ['pix', 'card', 'cash'];
+
+function parseId(value) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function isNonNegativeNumber(value) {
+  return value !== null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0;
+}
+
+function validateSaleBody(body) {
+  const { items, paymentMethod } = body || {};
+  if (!PAYMENT_METHODS.includes(paymentMethod)) {
+    return `paymentMethod deve ser um de: ${PAYMENT_METHODS.join(', ')}`;
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    return 'items deve ser uma lista com pelo menos um item';
+  }
+  const seen = new Set();
+  for (const saleItem of items) {
+    const itemId = parseId(saleItem?.itemId);
+    if (!itemId) return 'Cada item precisa de um itemId válido';
+    if (!Number.isInteger(saleItem.quantity) || saleItem.quantity <= 0) {
+      return `Quantidade inválida para o item ${itemId}`;
+    }
+    if (seen.has(itemId)) return `Item ${itemId} repetido na venda`;
+    seen.add(itemId);
+  }
+  return null;
+}
+
 // ─── Items ────────────────────────────────────────────────────────────────────
 
 app.get('/items', async (_req, res) => {
@@ -96,13 +130,22 @@ app.get('/items', async (_req, res) => {
 });
 
 app.post('/items', async (req, res) => {
-  const { name, description = '', quantity = 0, price = 0 } = req.body;
-  const qty   = Math.max(0, parseInt(quantity)   || 0);
+  const { name, description = '', quantity = 0, price = 0 } = req.body || {};
+  if (typeof name !== 'string' || name.trim() === '') {
+    return res.status(400).json({ error: 'Nome é obrigatório' });
+  }
+  if (typeof description !== 'string') {
+    return res.status(400).json({ error: 'Descrição inválida' });
+  }
+  if (!isNonNegativeNumber(quantity) || !isNonNegativeNumber(price)) {
+    return res.status(400).json({ error: 'Quantidade e preço devem ser números maiores ou iguais a 0' });
+  }
+  const qty  = Math.max(0, parseInt(quantity)   || 0);
   const prc   = Math.max(0, parseFloat(price)    || 0);
 
   const { rows } = await pool.query(
     'INSERT INTO items (name, description, quantity, price) VALUES ($1, $2, $3, $4) RETURNING *',
-    [name, description, qty, prc],
+    [name.trim(), description, qty, prc],
   );
   const item = rows[0];
 
@@ -117,7 +160,18 @@ app.post('/items', async (req, res) => {
 });
 
 app.patch('/items/:id', async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
+
+  const body = req.body || {};
+  if (body.quantity === undefined && body.price === undefined) {
+    return res.status(400).json({ error: 'Informe quantity e/ou price' });
+  }
+  if ((body.quantity !== undefined && !isNonNegativeNumber(body.quantity))
+    || (body.price !== undefined && !isNonNegativeNumber(body.price))) {
+    return res.status(400).json({ error: 'Quantidade e preço devem ser números maiores ou iguais a 0' });
+  }
+
   const { rows } = await pool.query('SELECT * FROM items WHERE id = $1', [id]);
   if (rows.length === 0) return res.status(404).json({ error: 'Item não encontrado' });
 
@@ -145,7 +199,8 @@ app.patch('/items/:id', async (req, res) => {
 });
 
 app.delete('/items/:id', async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
   await pool.query('DELETE FROM items WHERE id = $1', [id]);
   res.status(204).send();
 });
@@ -153,7 +208,8 @@ app.delete('/items/:id', async (req, res) => {
 // ─── Movements ────────────────────────────────────────────────────────────────
 
 app.get('/items/:id/movements', async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: 'ID inválido' });
   const { rows } = await pool.query(
     'SELECT * FROM movements WHERE item_id = $1 ORDER BY created_at DESC',
     [id],
@@ -187,6 +243,9 @@ app.get('/sales', async (_req, res) => {
 });
 
 app.post('/sales', async (req, res) => {
+  const validationError = validateSaleBody(req.body);
+  if (validationError) return res.status(400).json({ error: validationError });
+
   const { items, paymentMethod } = req.body;
   const client = await pool.connect();
 
@@ -196,7 +255,7 @@ app.post('/sales', async (req, res) => {
     // Validate stock for all items before touching anything
     const itemRows = [];
     for (const saleItem of items) {
-      const { rows } = await client.query('SELECT * FROM items WHERE id = $1', [saleItem.itemId]);
+      const { rows } = await client.query('SELECT * FROM items WHERE id = $1 FOR UPDATE', [saleItem.itemId]);
       if (rows.length === 0) {
         await client.query('ROLLBACK');
         return res.status(404).json({ error: `Item ${saleItem.itemId} não encontrado` });
